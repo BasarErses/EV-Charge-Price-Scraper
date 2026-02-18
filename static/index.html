@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>EV Price Scraper Chatbot</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .chat-container {
+            width: 450px;
+            height: 700px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: #0084ff;
+            color: white;
+            padding: 15px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            padding: 10px 15px;
+            border-radius: 15px;
+            max-width: 80%;
+            line-height: 1.4;
+            font-size: 14px;
+            position: relative;
+        }
+
+        .user-message {
+            background: #0084ff;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .bot-message {
+            background: #e4e6eb;
+            color: black;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .input-area {
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+            background: #fff;
+        }
+
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            outline: none;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #0084ff;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #0073e6;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* Results Card Style */
+        .result-card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .result-card h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+
+        .price-row {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding: 3px 0;
+        }
+
+        .price-row:last-child {
+            border-bottom: none;
+        }
+
+        .brand-badge {
+            background: #e1f5fe;
+            color: #0277bd;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        /* Spinner */
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0084ff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 5px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .download-btn {
+            display: inline-block;
+            margin: 5px;
+            padding: 8px 15px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 15px;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .download-btn:hover {
+            background: #218838;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="chat-container">
+        <div class="chat-header">EV Price Assistant</div>
+        <div class="chat-messages" id="messages">
+            <div class="message bot-message">Hello! ready to check prices? Just click "Start" below.</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Type a provider name (e.g. 'voltgo') to check prices..."
+                onkeydown="handleInput(event)">
+            <button onclick="startScraper()" id="startBtn">Start Full Scrape</button>
+            <button onclick="stopScraper()" id="stopBtn" style="background: #ff4444; display: none;">Stop</button>
+        </div>
+    </div>
+
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const userInput = document.getElementById('userInput');
+        let pollInterval = null;
+
+        async function handleInput(e) {
+            if (e.key === 'Enter') {
+                const query = userInput.value.trim();
+                if (!query) return;
+
+                checkOne(query);
+                userInput.value = "";
+            }
+        }
+
+        async function checkOne(query) {
+            addMessage(`Checking prices for "${query}"...`, "user");
+            const loaderId = addMessage("Searching...", "bot", true);
+
+            try {
+                const res = await fetch(`/api/check_one?query=${encodeURIComponent(query)}`);
+                const data = await res.json();
+
+                // Remove loader
+                const loaderDiv = document.getElementById(loaderId);
+                if (loaderDiv) loaderDiv.remove();
+
+                if (data.error) {
+                    addMessage("Error: " + data.error, "bot");
+                } else {
+                    renderSingleResult(data);
+                }
+            } catch (e) {
+                updateMessage(loaderId, "Search failed: " + e.message);
+            }
+        }
+
+        async function startScraper() {
+            // UI State
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            userInput.disabled = true;
+
+            // Add User Message
+            addMessage("Start full scrape", "user");
+
+            // Call API
+            try {
+                const res = await fetch('/api/start', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'started') {
+                    const processingMsgId = addMessage("Starting scraper... (0%)", "bot", true);
+                    pollStatus(processingMsgId);
+                } else {
+                    addMessage("Error: " + data.message, "bot");
+                    resetUI();
+                }
+            } catch (e) {
+                addMessage("Request failed: " + e.message, "bot");
+                resetUI();
+            }
+        }
+
+        async function stopScraper() {
+            if (!confirm("Are you sure you want to stop the scraper?")) return;
+
+            addMessage("Stopping scraper...", "user");
+            try {
+                const res = await fetch('/api/stop', { method: 'POST' });
+                const data = await res.json();
+                addMessage(data.message, "bot");
+            } catch (e) {
+                addMessage("Stop request failed: " + e.message, "bot");
+            }
+            // Force UI reset regardless
+            resetUI();
+        }
+
+        function resetUI() {
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+            startBtn.innerText = "Start Full Scrape";
+            startBtn.disabled = false;
+            userInput.disabled = false;
+            if (pollInterval) clearInterval(pollInterval);
+        }
+
+        function addMessage(text, sender, isSpinner = false) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}-message`;
+            if (isSpinner) {
+                div.innerHTML = `<div class="spinner"></div> <span>${text}</span>`;
+                div.id = "processing-" + Date.now();
+                messagesDiv.appendChild(div);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                return div.id;
+            } else {
+                div.innerText = text;
+                messagesDiv.appendChild(div);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                return null;
+            }
+        }
+
+        function updateMessage(id, text) {
+            const div = document.getElementById(id);
+            if (div) {
+                div.innerHTML = `<div class="spinner"></div> <span>${text}</span>`;
+            }
+        }
+
+        function pollStatus(msgId) {
+            pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/status');
+                    const data = await res.json();
+
+                    // Update Progress
+                    updateMessage(msgId, `Scraping... processed ${data.processed}/${data.total} sites (${data.progress}%)`);
+
+                    // Check completion
+                    if (data.state === 'done') {
+                        clearInterval(pollInterval);
+                        const div = document.getElementById(msgId);
+                        if (div) {
+                            div.innerHTML = `
+                                <div>✅ Scraping Complete!</div>
+                                <div style="margin-top:10px">
+                                    <a href="/api/download/csv" download="prices_flat.csv" class="download-btn">Download Prices</a>
+                                </div>
+                            `;
+                        }
+
+                        fetchResults();
+                        resetUI();
+                    } else if (data.state === 'idle' && data.processed === 0) {
+                        // Might have been stopped or not started?
+                        // If we are polling, it implies we expect it to be running.
+                        // But if stopped via API, state becomes idle.
+                        // Let's rely on stop button action to clear interval, 
+                        // but if purely checking status:
+                    }
+                } catch (e) {
+                    console.error("Polling error", e);
+                }
+            }, 3000);
+        }
+
+        async function fetchResults() {
+            const res = await fetch('/api/results');
+            const data = await res.json();
+
+            if (data.error) {
+                addMessage("Error fetching results: " + data.error, "bot");
+                return;
+            }
+
+            addMessage(`Found prices for ${data.length} providers. Here are some examples:`, "bot");
+            renderResultsList(data.slice(0, 10)); // Show top 10
+        }
+
+        function renderResultsList(list) {
+            const container = document.createElement('div');
+            container.className = "message bot-message";
+            container.style.background = "transparent";
+            container.style.padding = "0";
+
+            list.forEach(site => {
+                if (!site.prices || site.prices.length === 0) return;
+                container.appendChild(createCard(site));
+            });
+            messagesDiv.appendChild(container);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function renderSingleResult(site) {
+            const container = document.createElement('div');
+            container.className = "message bot-message";
+            container.style.background = "transparent";
+            container.style.padding = "0";
+
+            if (site.status === "failed" || !site.prices || site.prices.length === 0) {
+                container.innerHTML = `<div class="result-card"><h4>${site.provider_name}</h4><p>Status: ${site.status}</p><p>Error: ${site.error || "No data found"}</p></div>`;
+            } else {
+                container.appendChild(createCard(site));
+            }
+
+            messagesDiv.appendChild(container);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function createCard(site) {
+            const card = document.createElement('div');
+            card.className = "result-card";
+
+            let priceRows = site.prices.map(p =>
+                `<div class="price-row">
+                <span>${p.kw_range}</span>
+                <span style="font-weight:bold">${p.price} TL</span>
+             </div>`
+            ).join("");
+
+            card.innerHTML = `
+            <h4><span class="brand-badge">${site.provider_name}</span> <a href="${site.source_url}" target="_blank" style="font-size:9px">🔗</a></h4>
+            ${priceRows}
+        `;
+            return card;
+        }
+
+    </script>
+</body>
+
+</html>
